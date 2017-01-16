@@ -4,7 +4,7 @@
 #include <iostream>
 #include "StackedDenoisingAutoencoder.h"
 #include "DenoisingAutoencoder.h"
-#include "AddNoize.h"
+#include "AddNoise.h"
 
 using std::string;
 using std::to_string;

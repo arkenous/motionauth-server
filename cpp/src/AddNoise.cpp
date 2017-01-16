@@ -1,5 +1,5 @@
 
-#include "AddNoize.h"
+#include "AddNoise.h"
 #include <vector>
 #include <random>
 #include <algorithm>

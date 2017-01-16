@@ -4,7 +4,7 @@
 #include "JniMain.h"
 #include "StackedDenoisingAutoencoder.h"
 #include "Normalize.h"
-#include "AddNoize.h"
+#include "AddNoise.h"
 
 using std::vector;
 using std::string;
