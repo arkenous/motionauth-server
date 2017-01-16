@@ -35,41 +35,32 @@ public class SocketProcessor implements Runnable {
       return;
     }
 
-    int mode = 0;
+    int mode;
     String username = "";
-    int input_time = 0;
-    int dimen_data = 0;
+    int input_time;
+    int dimen_data;
 
     try {
-      //TODO Socket切断などのエラー処理を整える
       //ユーザ名や動作モード，モーションデータをSocket経由で取得する
 
       // Receive mode value
       System.out.print("Waiting for receiving mode value...");
       mode = inputStream.readInt();
-      outputStream.writeBoolean(true);
-      outputStream.flush();
       System.out.println("   Received: "+mode);
 
       // Receive user name
       System.out.print("Waiting for receiving user name...");
       if ((line = bufferedReader.readLine()) != null) username = line;
-      outputStream.writeBoolean(true);
-      outputStream.flush();
       System.out.println("   Received: "+username);
 
       // Receive number of input time
       System.out.print("Waiting for receiving number of input time...");
       input_time = inputStream.readInt();
-      outputStream.writeBoolean(true);
-      outputStream.flush();
       System.out.println("   Received: "+input_time);
 
       // Receive number of data dimension
       System.out.print("Waiting for receiving number of data dimension...");
       dimen_data = inputStream.readInt();
-      outputStream.writeBoolean(true);
-      outputStream.flush();
       System.out.println("   Received: "+dimen_data);
 
       // Receive data
@@ -80,8 +71,6 @@ public class SocketProcessor implements Runnable {
           x[time][dimen] = inputStream.readDouble();
         }
       }
-      outputStream.writeBoolean(true);
-      outputStream.flush();
       System.out.println("   Received");
 
       //JniMainにデータを渡して処理させる
@@ -99,16 +88,14 @@ public class SocketProcessor implements Runnable {
         // Send learnResult
         for (int neuron = 0, size = learnResult.length; neuron < size; ++neuron) {
           outputStream.writeBytes(learnResult[neuron]);
-          outputStream.flush();
         }
+        outputStream.flush();
       } else if (mode == 1) {
         // Authentication mode
         System.out.println("Authentication mode");
         // Receive SdA parameter length
         System.out.print("Waiting for receiving parameter_length...");
         int parameter_length = inputStream.readInt();
-        outputStream.writeBoolean(true);
-        outputStream.flush();
         System.out.println("   Received: "+parameter_length);
 
         // Receive SdA parameter
@@ -117,8 +104,6 @@ public class SocketProcessor implements Runnable {
         for (int i = 0; i < parameter_length; ++i) {
           if ((line = bufferedReader.readLine()) != null) SdA_parameter[i] = line;
         }
-        outputStream.writeBoolean(true);
-        outputStream.flush();
         System.out.println("   Received");
 
         double SdA_result = out(SdA_parameter, x[0]);
