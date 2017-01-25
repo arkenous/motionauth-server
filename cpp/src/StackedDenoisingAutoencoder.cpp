@@ -35,7 +35,7 @@ void StackedDenoisingAutoencoder::build(const vector<vector<double>> &input,
   unsigned long num_sda_layer = 0;
 
   vector<vector<double>> answer(input);
-  vector<vector<double>> noisy_input(add_noise(input, 0.5));
+  vector<vector<double>> noisy_input(add_noise(input, 0.2));
 
   DenoisingAutoencoder denoisingAutoencoder(noisy_input[0].size(), compression_rate, dropout_rate);
 
@@ -48,7 +48,7 @@ void StackedDenoisingAutoencoder::build(const vector<vector<double>> &input,
 
   while (num_sda_layer < result_num_layer) {
     answer = vector<vector<double>>(noisy_input);
-    noisy_input = add_noise(denoisingAutoencoder.getMiddleOutput(noisy_input), 0.5);
+    noisy_input = add_noise(denoisingAutoencoder.getMiddleOutput(noisy_input), 0.2);
 
     denoisingAutoencoder = DenoisingAutoencoder(noisy_input[0].size(), compression_rate,
                                                 dropout_rate);

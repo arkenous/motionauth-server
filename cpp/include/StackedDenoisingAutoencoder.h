@@ -25,7 +25,7 @@ public:
   double out(const vector<double> &input);
 
 private:
-  static const unsigned int MAX_TRIAL = 10000; // 学習上限回数
+  static const unsigned int MAX_TRIAL = 50000; // 学習上限回数
   constexpr static const double MAX_GAP = 0.1; // 許容する誤差の域値
   bool successFlg = true;
   unsigned long num_thread = (unsigned long) sysconf(_SC_NPROCESSORS_ONLN);

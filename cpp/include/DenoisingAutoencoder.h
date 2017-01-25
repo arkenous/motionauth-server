@@ -22,8 +22,8 @@ public:
   unsigned long getCurrentMiddleNeuronNum();
 
 private:
-  static const unsigned int MAX_TRIAL = 2000; // 学習上限回数
-  constexpr static const double MAX_GAP = 1.0; // 許容する誤差
+  static const unsigned int MAX_TRIAL = 100; // 学習上限回数
+  constexpr static const double MAX_GAP = 0.0; // 許容する誤差
   unsigned long num_thread = (unsigned long)sysconf(_SC_NPROCESSORS_ONLN);
 
   unsigned long input_neuron_num;
