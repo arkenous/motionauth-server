@@ -1,7 +1,7 @@
 PROGRAM = authserver
 
 NVCC = nvcc
-CXXFLAGS = -std=c++11 -O3 --compiler-options '-fPIC' -shared
+CXXFLAGS = --gpu-architecture=compute_30 --gpu-code=sm_30 -std=c++11 -O3 --compiler-options '-fPIC' -shared
 JAVA_HOME = /usr/lib/jvm/java-8-jdk
 INCLUDE = -Icpp/include -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/linux
 C_TARGET = out/lib$(PROGRAM).so
