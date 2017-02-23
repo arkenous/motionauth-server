@@ -1,7 +1,7 @@
 PROGRAM = authserver
 
 NVCC = nvcc
-CXXFLAGS = --gpu-architecture=compute_30 --gpu-code=sm_30 -std=c++11 -O3 --compiler-options '-fPIC' -shared
+CXXFLAGS = -gencode=arch=compute_30,code=sm_30 -gencode=arch=compute_32,code=sm_32 -gencode=arch=compute_35,code=sm_35 -gencode=arch=compute_50,code=sm_50 -gencode=arch=compute_52,code=sm_52 -gencode=arch=compute_60,code=sm_60, -gencode=arch=compute_61,code=sm_61 -gencode=arch=compute_61,code=compute_61 -std=c++11 -O3 --compiler-options '-fPIC' -shared
 JAVA_HOME = /usr/lib/jvm/java-8-jdk
 INCLUDE = -Icpp/include -I$(JAVA_HOME)/include -I$(JAVA_HOME)/include/linux
 C_TARGET = out/lib$(PROGRAM).so

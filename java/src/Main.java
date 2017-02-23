@@ -6,7 +6,7 @@ import java.util.concurrent.Executors;
 
 public class Main {
   public static void main(String[] args) {
-    int port = 0;
+    int port = 50010;
     ServerSocket server = null;
     ExecutorService executorService = Executors.newCachedThreadPool();
 

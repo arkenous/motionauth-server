@@ -39,9 +39,9 @@ private:
   int activation_type = 0;
   double delta = 0.0; // 修正量
   double bias = 0.0; // ニューロンのバイアス // -threshold
-  double alpha = 0.01;
+  double alpha = 0.005;
   double epsilon = 0.00000001;
-  double rambda = 0.00001; // 荷重減衰の定数．正の小さな定数にしておくことで勾配がゼロでも重みが減る
+  double lambda = 0.00001; // 荷重減衰の定数．正の小さな定数にしておくことで勾配がゼロでも重みが減る
   double activation_identity(const double x); // 0
   double activation_sigmoid(const double x); // 1
   double activation_tanh(const double x); // 2
@@ -49,10 +49,10 @@ private:
 
   double beta_one = 0.9;
   double beta_two = 0.999;
-  unsigned long iteration;
+  unsigned long iteration = 0;
 
-  double dropout_rate; // どれくらいの割合で中間層ニューロンをDropoutさせるか
-  double dropout_mask; // Dropoutのマスク値．0.0で殺して1.0で生かす
+  double dropout_rate = 0.0; // どれくらいの割合で中間層ニューロンをDropoutさせるか
+  double dropout_mask = 1.0; // Dropoutのマスク値．0.0で殺して1.0で生かす
 
   vector<double> h_inputWeights;
   vector<double> h_m;

@@ -35,7 +35,7 @@ void StackedDenoisingAutoencoder::build(const vector<vector<double>> &input,
   unsigned long num_sda_layer = 0;
 
   vector<vector<double>> answer(input);
-  vector<vector<double>> noisy_input(add_noise(input, 0.2));
+  vector<vector<double>> noisy_input(gaussian_noise(input, 0.0, 1.0, 0.3));
 
   DenoisingAutoencoder denoisingAutoencoder(noisy_input[0].size(), compression_rate, dropout_rate);
 
@@ -48,7 +48,7 @@ void StackedDenoisingAutoencoder::build(const vector<vector<double>> &input,
 
   while (num_sda_layer < result_num_layer) {
     answer = vector<vector<double>>(noisy_input);
-    noisy_input = add_noise(denoisingAutoencoder.getMiddleOutput(noisy_input), 0.2);
+    noisy_input = gaussian_noise(denoisingAutoencoder.getMiddleOutput(noisy_input), 0.0, 1.0, 0.3);
 
     denoisingAutoencoder = DenoisingAutoencoder(noisy_input[0].size(), compression_rate,
                                                 dropout_rate);
@@ -81,7 +81,7 @@ void StackedDenoisingAutoencoder::setup(const vector<string> &params, const doub
   vector<double> m = separate_by_camma(elems_per_param[1]);
   vector<double> nu = separate_by_camma(elems_per_param[2]);
 
-  output_neuron = Neuron(weight.size(), weight, m, nu, iteration, bias, 1, dropout_rate);
+  output_neuron = Neuron(weight.size(), weight, m, nu, iteration, bias, 1, 0.0);
 
 
   sda_neurons.resize(params.size() - 1);
@@ -166,7 +166,7 @@ vector<string> StackedDenoisingAutoencoder::learn(const vector <vector<double>> 
                                         const double dropout_rate) {
   vector<double> empty_vector;
   output_neuron = Neuron(sda_neurons.back().size(), empty_vector, empty_vector, empty_vector,
-                         0, 0.0, 1, dropout_rate);
+                         0, 0.0, 1, 0.0);
   output_neuron.dropout(1.0); // disable dropout
 
   // Learn
@@ -176,108 +176,134 @@ vector<string> StackedDenoisingAutoencoder::learn(const vector <vector<double>> 
   mt19937 mt;
   mt.seed(rnd());
   uniform_real_distribution<double> real_rnd(0.0, 1.0);
+  unsigned long layer = 0, neuron = 0, n_size = 0, i = 0, j = 0;
+  unsigned long sda_neuron_size = sda_neurons.size();
+  unsigned long answer_size = answer.size();
+  unsigned long charge = 0;
+  unsigned long input_size = input.size();
 
   for (int trial = 0; trial < MAX_TRIAL; ++trial) {
     cout << "-----   trial: " << trial << "   -----" << endl;
 
     // Set SdA dropout
-    for (unsigned long layer = 0, l_size = sda_neurons.size(); layer < l_size; ++layer) {
+    for (unsigned long layer = 0, l_size = sda_neuron_size; layer < l_size; ++layer) {
       for (unsigned long neuron = 0, n_size = sda_neurons[layer].size(); neuron < n_size; ++neuron) {
         sda_neurons[layer][neuron].dropout(real_rnd(mt));
       }
     }
 
-    in = input[trial % answer.size()];
-    ans = answer[trial % answer.size()];
+    in = input[trial % answer_size];
+    ans = answer[trial % answer_size];
 
     // Feed Forward
     // SdA First Layer
-    unsigned long charge;
     threads.clear();
-    if (sda_neurons[0].size() <= num_thread) charge = 1;
-    else charge = sda_neurons[0].size() / num_thread;
-    for (unsigned long i = 0, num_neuron = sda_neurons[0].size(); i < num_neuron; i += charge) {
-      if (i != 0 && num_neuron / i == 1) {
-        threads.push_back(thread(&StackedDenoisingAutoencoder::sdaFirstLayerForwardThread, this,
-                                 i, num_neuron));
-      } else {
-        threads.push_back(thread(&StackedDenoisingAutoencoder::sdaFirstLayerForwardThread, this,
-                                 i, i + charge));
-      }
+    if (sda_neurons[0].size() <= num_thread) {
+      for (i = 0, n_size = sda_neurons[0].size(); i < n_size; ++i)
+        threads[i] = thread(&StackedDenoisingAutoencoder::sdaFirstLayerOutThread, this,
+                                    i, i + 1);
+      for (i = 0, n_size = sda_neurons[0].size(); i < n_size; ++i)
+        threads[i].join();
+    } else {
+      charge = sda_neurons[0].size() / num_thread;
+      for (i = 0, j = 0, n_size = sda_neurons[0].size(); j < num_thread; i += charge, ++j)
+        if (j == num_thread - 1)
+          threads[j] = thread(&StackedDenoisingAutoencoder::sdaFirstLayerOutThread, this,
+                                   i, n_size);
+        else
+          threads[j] = thread(&StackedDenoisingAutoencoder::sdaFirstLayerOutThread, this,
+                                   i, i + charge);
+      for (i = 0, j = 0, n_size = sda_neurons[0].size(); j < num_thread; i += charge, ++j)
+        threads[j].join();
     }
-    for (thread &th : threads) th.join();
 
     // SdA Other Layer
-    if (sda_neurons.size() > 1) {
-      for (unsigned long layer = 1, last_layer = sda_neurons.size() - 1;
-           layer <= last_layer; ++layer) {
+    if (sda_neuron_size > 1) {
+      for (layer = 1; layer < sda_neuron_size; ++layer) {
         threads.clear();
-        if (sda_neurons[layer].size() <= num_thread) charge = 1;
-        else charge = sda_neurons[layer].size() / num_thread;
-        for (unsigned long i = 0, num_neuron = sda_neurons[layer].size();
-             i < num_neuron; i += charge) {
-          if (i != 0 && num_neuron / i == 1) {
-            threads.push_back(thread(&StackedDenoisingAutoencoder::sdaOtherLayerForwardThread, this,
-                                     layer, i, num_neuron));
-          } else {
-            threads.push_back(thread(&StackedDenoisingAutoencoder::sdaOtherLayerForwardThread, this,
-                                     layer, i, i + charge));
-          }
+        if (sda_neurons[layer].size() <= num_thread) {
+          for (i = 0, n_size = sda_neurons[layer].size(); i < n_size; ++i)
+            threads[i] = thread(&StackedDenoisingAutoencoder::sdaOtherLayerOutThread, this,
+                                      layer, i, i + 1);
+          for (i = 0, n_size = sda_neurons[layer].size(); i < n_size; ++i)
+            threads[i].join();
+        } else {
+          charge = sda_neurons[layer].size() / num_thread;
+          for (i = 0, j = 0, n_size = sda_neurons[layer].size(); j < num_thread; i += charge, ++j)
+            if (j == num_thread - 1)
+              threads[j] = thread(&StackedDenoisingAutoencoder::sdaOtherLayerOutThread, this,
+                                       layer, i, n_size);
+            else
+              threads[j] = thread(&StackedDenoisingAutoencoder::sdaOtherLayerOutThread, this,
+                                       layer, i, i + charge);
+          for (i = 0, j = 0, n_size = sda_neurons[layer].size(); j < num_thread; i += charge, ++j)
+            threads[j].join();
         }
-        for (thread &th : threads) th.join();
       }
     }
 
     // 出力値を推定
     threads.clear();
-    if (output_neuron_num <= num_thread) charge = 1;
-    else charge = output_neuron_num / num_thread;
-    for (int i = 0; i < output_neuron_num; i += charge) {
-      if (i != 0 && output_neuron_num / i == 1) {
-        threads.push_back(thread(&StackedDenoisingAutoencoder::outForwardThread, this,
-                                 i, output_neuron_num));
-      } else {
-        threads.push_back(thread(&StackedDenoisingAutoencoder::outForwardThread, this,
-                                 i, i + charge));
-      }
+    if (output_neuron_num <= num_thread) {
+      for (i = 0; i < output_neuron_num; ++i)
+        threads[i] = thread(&StackedDenoisingAutoencoder::outForwardThread, this,
+                                    i, i + 1);
+      for (i = 0; i < output_neuron_num; ++i)
+        threads[i].join();
+    } else {
+      charge = output_neuron_num / num_thread;
+      for (i = 0, j = 0; j < num_thread; i += charge, ++j)
+        if (j == num_thread - 1)
+          threads[j] = thread(&StackedDenoisingAutoencoder::outForwardThread, this,
+                                   i, output_neuron_num);
+        else
+          threads[j] = thread(&StackedDenoisingAutoencoder::outForwardThread, this,
+                                   i, i + charge);
+      for (i = 0, j = 0; j < num_thread; i += charge, ++j)
+        threads[j].join();
     }
-    for (thread &th : threads) th.join();
 
     successFlg = true;
 
     // Back Propagation (learn phase)
     //region 出力層を学習する
     threads.clear();
-    if (output_neuron_num <= num_thread) charge = 1;
-    else charge = output_neuron_num / num_thread;
-    for (int i = 0; i < output_neuron_num; i += charge) {
-      if (i != 0 && output_neuron_num / i == 1) {
-        threads.push_back(thread(&StackedDenoisingAutoencoder::outLearnThread, this,
-                                 i, output_neuron_num));
-      } else {
-        threads.push_back(thread(&StackedDenoisingAutoencoder::outLearnThread, this,
-                                 i, i + charge));
-      }
+    if (output_neuron_num <= num_thread) {
+      for (i = 0; i < output_neuron_num; ++i)
+        threads[i] = thread(&StackedDenoisingAutoencoder::outLearnThread, this,
+                                    i, i + 1);
+      for (i = 0; i < output_neuron_num; ++i)
+        threads[i].join();
+    } else {
+      charge = output_neuron_num / num_thread;
+      for (i = 0, j = 0; j < num_thread; i += charge, ++j)
+        if (j == num_thread - 1)
+          threads[j] = thread(&StackedDenoisingAutoencoder::outLearnThread, this,
+                                   i, output_neuron_num);
+        else
+          threads[j] = thread(&StackedDenoisingAutoencoder::outLearnThread, this,
+                                   i, i + charge);
+      for (i = 0, j = 0; j < num_thread; i += charge, ++j)
+        threads[j].join();
     }
-    for (thread &th : threads) th.join();
     //endregion
 
     // 連続成功回数による終了判定
     if (successFlg) {
-      succeed++;
-      if (succeed >= input.size()) break;
+      ++succeed;
+      if (succeed >= input_size) break;
       else continue;
     } else succeed = 0;
 
     // learn SdA
-//    if (sda_neurons.size() > 1) {
+//    if (sda_neuron_size > 1) {
 //      threads.clear();
-//      if (sda_neurons[sda_neurons.size() - 1].size() <= num_thread) charge = 1;
-//      else charge = sda_neurons[sda_neurons.size() - 1].size() / num_thread;
-//      for (int i = 0; i < sda_neurons[sda_neurons.size() - 1].size(); i += charge) {
-//        if (i != 0 && sda_neurons[sda_neurons.size() - 1].size() / i == 1) {
+//      if (sda_neurons[sda_neuron_size - 1].size() <= num_thread) charge = 1;
+//      else charge = sda_neurons[sda_neuron_size - 1].size() / num_thread;
+//      for (int i = 0; i < sda_neurons[sda_neuron_size - 1].size(); i += charge) {
+//        if (i != 0 && sda_neurons[sda_neuron_size - 1].size() / i == 1) {
 //          threads.push_back(std::thread(&StackedDenoisingAutoencoder::sdaLastLayerLearnThread, this,
-//                                        i, sda_neurons[sda_neurons.size() - 1].size()));
+//                                        i, sda_neurons[sda_neuron_size - 1].size()));
 //        } else {
 //          threads.push_back(std::thread(&StackedDenoisingAutoencoder::sdaLastLayerLearnThread, this,
 //                                        i, i + charge));
@@ -286,7 +312,7 @@ vector<string> StackedDenoisingAutoencoder::learn(const vector <vector<double>> 
 //      for (std::thread &th : threads) th.join();
 //    }
 //
-//    for (int layer = sda_neurons.size() - 2; layer >= 1; --layer) {
+//    for (int layer = sda_neuron_size - 2; layer >= 1; --layer) {
 //      if (sda_neurons[layer].size() <= num_thread) charge = 1;
 //      else charge = sda_neurons[layer].size() / num_thread;
 //      threads.clear();
@@ -319,9 +345,9 @@ vector<string> StackedDenoisingAutoencoder::learn(const vector <vector<double>> 
 
   // 全ての教師データで正解を出すか，学習上限回数を超えた場合に終了
   //レイヤ毎にニューロンのパラメータを取得し，vectorにつめて返す
-  vector<string> result(sda_neurons.size() + 1, "");
+  vector<string> result(sda_neuron_size + 1, "");
   string params_per_layer = "";
-  for (unsigned long layer = 0, l_size = sda_neurons.size(); layer < l_size; ++layer) {
+  for (unsigned long layer = 0, l_size = sda_neuron_size; layer < l_size; ++layer) {
     for (unsigned long neuron = 0, n_size = sda_neurons[layer].size(); neuron < n_size; ++neuron ) {
       unsigned long num_input = sda_neurons[layer][neuron].getNumInput();
 
@@ -378,23 +404,22 @@ vector<string> StackedDenoisingAutoencoder::learn(const vector <vector<double>> 
 }
 
 
-
-
-void StackedDenoisingAutoencoder::sdaFirstLayerForwardThread(const int begin,
-                                                             const int end) {
+void StackedDenoisingAutoencoder::sdaFirstLayerOutThread(const int begin, const int end) {
   for (int neuron = begin; neuron < end; ++neuron)
-    sda_out[0][neuron] = sda_neurons[0][neuron].learn_output(in);
+    sda_learned_out[0][neuron] = sda_neurons[0][neuron].output(in);
 }
 
-void StackedDenoisingAutoencoder::sdaOtherLayerForwardThread(const int layer,
-                                                             const int begin, const int end) {
-  for (int neuron = begin; neuron < end; ++neuron)
-    sda_out[layer][neuron] = sda_neurons[layer][neuron].learn_output(sda_out[layer - 1]);
+void StackedDenoisingAutoencoder::sdaOtherLayerOutThread(const int layer,
+                                                         const int begin, const int end) {
+  for (int neuron = begin; neuron < end; ++neuron) {
+    sda_learned_out[layer][neuron] = sda_neurons[layer][neuron].output(sda_learned_out[layer - 1]);
+  }
 }
+
 
 void StackedDenoisingAutoencoder::outForwardThread(const int begin, const int end) {
   for (int neuron = begin; neuron < end; ++neuron)
-    o = output_neuron.learn_output(sda_out.back());
+    o = output_neuron.learn_output(sda_learned_out.back());
 }
 
 void StackedDenoisingAutoencoder::outLearnThread(const int begin, const int end) {
@@ -410,8 +435,111 @@ void StackedDenoisingAutoencoder::outLearnThread(const int begin, const int end)
     }
 
     // 出力層の学習
-    output_neuron.learn(delta, sda_out.back());
+    output_neuron.learn(delta, sda_learned_out.back());
   }
+}
+
+
+double StackedDenoisingAutoencoder::crossEntropy(const double output, const double answer) {
+  return -answer * log(output) - (1.0 - answer) * log(1.0 - output);
+}
+
+
+double StackedDenoisingAutoencoder::out(const vector<double> &input) {
+  in = input;
+
+  // Feed Forward
+  // SdA First Layer
+  unsigned long n_size = 0, charge = 0, i = 0, j = 0, layer = 0;
+  unsigned long sda_neuron_size = sda_neurons.size();
+
+  threads.clear();
+  if (sda_neurons[0].size() <= num_thread) {
+    for (i = 0, n_size = sda_neurons[0].size(); i < n_size; ++i)
+      threads[i] = thread(&StackedDenoisingAutoencoder::sdaFirstLayerOutThread, this,
+                                  i, i + 1);
+    for (i = 0, n_size = sda_neurons[0].size(); i < n_size; ++i)
+      threads[i].join();
+  } else {
+    charge = sda_neurons[0].size() / num_thread;
+    for (i = 0, j = 0, n_size = sda_neurons[0].size(); j < num_thread; i += charge, ++j)
+      if (j == num_thread - 1)
+        threads[j] = thread(&StackedDenoisingAutoencoder::sdaFirstLayerOutThread, this,
+                                 i, n_size);
+      else
+        threads[j] = thread(&StackedDenoisingAutoencoder::sdaFirstLayerOutThread, this,
+                                 i, i + charge);
+    for (i = 0, j = 0, n_size = sda_neurons[0].size(); j < num_thread; i += charge, ++j)
+      threads[j].join();
+  }
+
+  // SdA Other Layer
+  if (sda_neuron_size > 1) {
+    for (layer = 1; layer < sda_neuron_size; ++layer) {
+      threads.clear();
+      if (sda_neurons[layer].size() <= num_thread) {
+        for (i = 0, n_size = sda_neurons[layer].size(); i < n_size; ++i)
+          threads[i] = thread(&StackedDenoisingAutoencoder::sdaOtherLayerOutThread, this,
+                                      layer, i, i + 1);
+        for (i = 0, n_size = sda_neurons[layer].size(); i < n_size; ++i)
+          threads[i].join();
+      } else {
+        charge = sda_neurons[layer].size() / num_thread;
+        for (i = 0, j = 0, n_size = sda_neurons[layer].size(); j < num_thread; i += charge, ++j)
+          if (j == num_thread - 1)
+            threads[j] = thread(&StackedDenoisingAutoencoder::sdaOtherLayerOutThread, this,
+                                     layer, i, n_size);
+          else
+            threads[j] = thread(&StackedDenoisingAutoencoder::sdaOtherLayerOutThread, this,
+                                     layer, i, i + charge);
+        for (i = 0, j = 0, n_size = sda_neurons[layer].size(); j < num_thread; i += charge, ++j)
+          threads[j].join();
+      }
+    }
+  }
+
+  // 出力値を推定
+  threads.clear();
+  if (output_neuron_num <= num_thread) {
+    for (i = 0; i < output_neuron_num; ++i)
+      threads[i] = thread(&StackedDenoisingAutoencoder::outOutThread, this,
+                                  i, i + 1);
+    for (i = 0, j = 0; i < output_neuron_num; ++i, ++j)
+      threads[i].join();
+  } else {
+    charge = output_neuron_num / num_thread;
+    for (i = 0, j = 0; j < num_thread; i += charge, ++j)
+      if (j == num_thread - 1)
+        threads[j] = thread(&StackedDenoisingAutoencoder::outOutThread, this,
+                                 i, output_neuron_num);
+      else
+        threads[j] = thread(&StackedDenoisingAutoencoder::outOutThread, this,
+                                 i, i + charge);
+    for (i = 0, j = 0; j < num_thread; i += charge, ++j)
+      threads[j].join();
+  }
+
+
+  return learned_o;
+}
+
+
+void StackedDenoisingAutoencoder::outOutThread(const int begin, const int end) {
+  for (int neuron = begin; neuron < end; ++neuron) {
+    learned_o = output_neuron.output(sda_learned_out.back());
+  }
+}
+/*
+void StackedDenoisingAutoencoder::sdaFirstLayerForwardThread(const int begin,
+                                                             const int end) {
+  for (int neuron = begin; neuron < end; ++neuron)
+    sda_out[0][neuron] = sda_neurons[0][neuron].learn_output(in);
+}
+
+void StackedDenoisingAutoencoder::sdaOtherLayerForwardThread(const int layer,
+                                                             const int begin, const int end) {
+  for (int neuron = begin; neuron < end; ++neuron)
+    sda_out[layer][neuron] = sda_neurons[layer][neuron].learn_output(sda_out[layer - 1]);
 }
 
 void StackedDenoisingAutoencoder::sdaLastLayerLearnThread(const int begin, const int end) {
@@ -464,87 +592,4 @@ void StackedDenoisingAutoencoder::sdaFirstLayerLearnThread(const int begin, cons
     sda_neurons[0][neuron].learn(delta, in);
   }
 }
-
-
-double StackedDenoisingAutoencoder::crossEntropy(const double output, const double answer) {
-  return -answer * log(output) - (1.0 - answer) * log(1.0 - output);
-}
-
-
-double StackedDenoisingAutoencoder::out(const vector<double> &input) {
-  in = input;
-
-  // Feed Forward
-  // SdA First Layer
-  unsigned long charge;
-  threads.clear();
-  if (sda_neurons[0].size() <= num_thread) charge = 1;
-  else charge = sda_neurons[0].size() / num_thread;
-  for (unsigned long i = 0, num_neuron = sda_neurons[0].size(); i < num_neuron; i += charge) {
-    if (i != 0 && num_neuron / i == 1) {
-      threads.push_back(thread(&StackedDenoisingAutoencoder::sdaFirstLayerOutThread, this,
-                               i, num_neuron));
-    } else {
-      threads.push_back(thread(&StackedDenoisingAutoencoder::sdaFirstLayerOutThread, this,
-                               i, i + charge));
-    }
-  }
-  for (thread &th : threads) th.join();
-
-  // SdA Other Layer
-  if (sda_neurons.size() > 1) {
-    for (unsigned long layer = 1, last_layer = sda_neurons.size() - 1;
-         layer <= last_layer; ++layer) {
-      threads.clear();
-      if (sda_neurons[layer].size() <= num_thread) charge = 1;
-      else charge = sda_neurons[layer].size() / num_thread;
-      for (unsigned long i = 0, num_neuron = sda_neurons[layer].size();
-           i < num_neuron; i += charge) {
-        if (i != 0 && num_neuron / i == 1) {
-          threads.push_back(thread(&StackedDenoisingAutoencoder::sdaOtherLayerOutThread, this,
-                                   layer, i, num_neuron));
-        } else {
-          threads.push_back(thread(&StackedDenoisingAutoencoder::sdaOtherLayerOutThread, this,
-                                   layer, i, i + charge));
-        }
-      }
-      for (thread &th : threads) th.join();
-    }
-  }
-
-  // 出力値を推定
-  threads.clear();
-  if (output_neuron_num <= num_thread) charge = 1;
-  else charge = output_neuron_num / num_thread;
-  for (int i = 0; i < output_neuron_num; i += charge) {
-    if (i != 0 && output_neuron_num / i == 1) {
-      threads.push_back(thread(&StackedDenoisingAutoencoder::outOutThread, this,
-                               i, output_neuron_num));
-    } else {
-      threads.push_back(thread(&StackedDenoisingAutoencoder::outOutThread, this,
-                               i, i + charge));
-    }
-  }
-  for (thread &th : threads) th.join();
-
-
-  return learned_o;
-}
-
-void StackedDenoisingAutoencoder::sdaFirstLayerOutThread(const int begin, const int end) {
-  for (int neuron = begin; neuron < end; ++neuron)
-    sda_learned_out[0][neuron] = sda_neurons[0][neuron].output(in);
-}
-
-void StackedDenoisingAutoencoder::sdaOtherLayerOutThread(const int layer,
-                                                         const int begin, const int end) {
-  for (int neuron = begin; neuron < end; ++neuron) {
-    sda_learned_out[layer][neuron] = sda_neurons[layer][neuron].output(sda_learned_out[layer - 1]);
-  }
-}
-
-void StackedDenoisingAutoencoder::outOutThread(const int begin, const int end) {
-  for (int neuron = begin; neuron < end; ++neuron) {
-    learned_o = output_neuron.output(sda_learned_out.back());
-  }
-}
+*/

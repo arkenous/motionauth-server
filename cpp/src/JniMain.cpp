@@ -22,10 +22,13 @@ JNIEXPORT jobjectArray JNICALL Java_SocketProcessor_learn
   (JNIEnv *env, jobject thiz, jobjectArray x) {
   cout << "Java_SocketProcessor_learn" << endl;
   vector<vector<double>> xVector = jobjectArrayToTwoDimenDoubleVector(env, x);
+  vector<vector<double>> noised = zero_noise(xVector, 0.3);
   cout << "Data converted" << endl;
 
   for (unsigned long i = 0, size = xVector.size(); i < size; ++i)
     normalize(&xVector[i]);
+  for (unsigned long i = 0, size = noised.size(); i < size; ++i)
+    normalize(&noised[i]);
   cout << "Data normalized" << endl;
 
   vector<vector<double>> train;
@@ -37,10 +40,16 @@ JNIEXPORT jobjectArray JNICALL Java_SocketProcessor_learn
   stackedDenoisingAutoencoder.build(train, num_sda_layer, sda_compression_rate, dropout_rate);
   cout << "Finish Building SdA" << endl;
 
+  for (unsigned long i = 0, size = noised.size(); i < size; ++i)
+    train.push_back(noised[i]);
+
   vector<vector<double>> answer;
-  answer.resize(xVector.size());
-  for (unsigned long i = 0, size = xVector.size(); i < size; ++i) {
+  answer.resize(xVector.size() + noised.size());
+  for (unsigned long i = 0, size = answer.size() / 2; i < size; ++i) {
     answer[i].push_back(0.0);
+  }
+  for (unsigned long i = answer.size() / 2, size = answer.size(); i < size; ++i) {
+    answer[i].push_back(1.0);
   }
 
   cout << "Start learning NN" << endl;
